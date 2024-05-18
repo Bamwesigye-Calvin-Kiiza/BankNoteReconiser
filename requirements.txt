@@ -5,3 +5,4 @@ Pillow==9.4.0
 pandas==2.2.2
 matplotlib==3.7.2
 seaborn==0.12.2
+Python==3.11.5
