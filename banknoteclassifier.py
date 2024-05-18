@@ -8,9 +8,11 @@ from io import BytesIO
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from tensorflow.keras.layers import BatchNormalization
 
 # Load your pre-trained model
-model = load_model('./ResNet152V2.h5')
+# model = load_model('./ResNet152V2.h5')
+model = load_model('./ResNet152V2.h5', custom_objects={'BatchNormalization': BatchNormalization})
 
 # Function to predict image with probability
 def predict_image_with_probability(img):
