@@ -1,7 +1,7 @@
 import streamlit as st
 import numpy as np
 from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing.image import load_img, img_to_array
+from tensorflow.keras.preprocessing.image import img_to_array
 from PIL import Image
 import base64
 from io import BytesIO
@@ -9,21 +9,54 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from tensorflow.keras.layers import BatchNormalization
-
+from groq import Groq
 # Load your pre-trained model
-# model = load_model('./ResNet152V2.h5')
 model = load_model('./ResNet152V2.h5', custom_objects={'BatchNormalization': BatchNormalization})
+
+# Function to preprocess image
+def preprocess_image(image, target_size):
+    """Preprocess the image by cropping, resizing, and normalizing."""
+    # Convert the image to a PIL image for cropping and resizing
+    image = Image.fromarray(np.uint8(image))
+
+    # Crop the image to a square with the smallest dimension
+    min_length = min(image.size)
+    left = (image.width - min_length) / 2
+    top = (image.height - min_length) / 2
+    right = (image.width + min_length) / 2
+    bottom = (image.height + min_length) / 2
+
+    image = image.crop((left, top, right, bottom))
+
+    # Resize the image to the target size
+    image = image.resize((target_size, target_size), Image.BILINEAR)
+
+    # Convert the image back to a numpy array
+    image = img_to_array(image)
+
+    # Normalize the image
+    image = (image - 127.5) / 127.5
+
+    return image
 
 # Function to predict image with probability
 def predict_image_with_probability(img):
-    img = img.resize((224, 224))
-    x = img_to_array(img)
-    x /= 255
-    x = np.expand_dims(x, axis=0)
-    images = np.vstack([x])
-    prediction = model.predict(images, batch_size=10)
+    target_size = 224  # Adjust to your model's input size
+    
+    # Preprocess the image
+    preprocessed_img = preprocess_image(img, target_size=target_size)
+    
+    # Add batch dimension
+    x = np.expand_dims(preprocessed_img, axis=0)
+
+    # Predict the class of the image
+    prediction = model.predict(x, batch_size=1)
+
+    # Assuming the model is trained for binary classification (Counterfeit vs Genuine)
+    # with the output layer having two neurons (softmax activation)
     prediction_result = 'Counterfeit' if prediction[0][0] > 0.6 else 'Genuine'
     prediction_probability = prediction[0][0] if prediction_result == 'Counterfeit' else prediction[0][1]
+    
     return prediction_result, prediction_probability
 
 # Function to convert PIL image to base64
@@ -144,7 +177,26 @@ def display_probability_insights(df):
     ax.legend()
 
     st.pyplot(fig)
-
+    
+# Function to generate AI response
+def chat_with_Assistant(messages):
+    '''
+    Generates replies about counterfeit notes 
+    Args:
+        messages (list of dict): List of message dicts with "role" and "content"
+    Returns:
+        generated message 
+    '''
+    client = Groq(
+        api_key="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"
+    )
+    chat_completion = client.chat.completions.create(
+        messages=messages,
+        model="llama3-8b-8192",
+    )
+    script = chat_completion.choices[0].message.content
+    script_without_asterisks = script.replace("**", "")
+    return script_without_asterisks
 # Streamlit app with sidebar
 st.sidebar.title("Menu")
 
@@ -152,10 +204,11 @@ st.sidebar.title("Menu")
 detector_button = st.sidebar.button("Detector", key="detector", on_click=lambda: st.session_state.update({"selected_option": "Detector"}))
 security_features_button = st.sidebar.button("Security Features", key="security_features", on_click=lambda: st.session_state.update({"selected_option": "Security Features"}))
 results_button = st.sidebar.button("Results", key="results", on_click=lambda: st.session_state.update({"selected_option": "Results"}))
-
+results_button = st.sidebar.button("Chat with AI-Calvin", key="Chat with AI-Calvin", on_click=lambda: st.session_state.update({"selected_option": "Chat with AI-Calvin"}))
 # Default to Detector
 if "selected_option" not in st.session_state:
     st.session_state.selected_option = "Detector"
+
 
 if st.session_state.selected_option == "Detector":
     st.title("Counterfeit Detector")
@@ -211,3 +264,33 @@ elif st.session_state.selected_option == "Security Features":
 elif st.session_state.selected_option == "Results":
     st.title("Results")
     plot_results()
+
+elif st.session_state.selected_option == "Chat with AI-Calvin":
+    st.title("Talk to AI-Calvin")
+
+    if 'conversation' not in st.session_state:
+        st.session_state.conversation = []
+
+    # Input field for user to enter message
+    user_input = st.text_input("You:", key="user_input")
+
+    # Button to send message
+    if st.button("Send"):
+        # Check if user input is provided
+        if user_input:
+            # Append user message to conversation
+            st.session_state.conversation.append({"role": "user", "content": user_input})
+            
+            # Generate AI response
+            script = chat_with_Assistant(st.session_state.conversation)
+            
+            # Append AI response to conversation
+            st.session_state.conversation.append({"role": "assistant", "content": script})
+
+    # Display conversation history in reverse order
+    if st.session_state.conversation:
+        for message in reversed(st.session_state.conversation):
+            if message["role"] == "user":
+                st.markdown(f"**You:** {message['content']}")
+            else:
+                st.markdown(f"**AI-Calvin:** {message['content']}")
